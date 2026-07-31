@@ -10,6 +10,9 @@ struct NibApp: App {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
             EditorScreen(document: file.$document)
         }
+        // Дефолт SwiftUI — 900×450, в него влезает полтора десятка строк.
+        // Применяется только к окну без сохранённой геометрии: свой размер система запомнит.
+        .defaultSize(width: 1240, height: 840)
         .commands {
             CommandGroup(after: .toolbar) {
                 Button("Крупнее") { zoom?.inc() }

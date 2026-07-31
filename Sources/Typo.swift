@@ -30,7 +30,14 @@ enum Typo {
 
     static func paragraph(_ size: CGFloat) -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
-        p.lineHeightMultiple = 1.5
+        // Здесь был lineHeightMultiple = 1.5. Он раздувает бокс строки, а каретка рисуется
+        // во всю его высоту — выходила 30 pt при видимой высоте букв ~16 pt.
+        // lineSpacing даёт тот же шаг строки (29.89 против 30.0, замерено), но бокс не трогает:
+        // каретка садится по шрифту, 20 pt. Промежуточных значений в TextKit 2 нет — стоит
+        // задать высоту строки явно, хоть множителем, хоть minimumLineHeight, и каретка
+        // снова займёт весь шаг. Считаем от метрик шрифта, а не от кегля: на другой гарнитуре
+        // константа вроде size * 0.58 дала бы другой ритм.
+        p.lineSpacing = (body(size).ascender - body(size).descender) * 0.5
         p.paragraphSpacing = size * 0.55
         p.defaultTabInterval = size * 2
         return p
