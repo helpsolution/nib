@@ -17,12 +17,15 @@ APP="$BUILD/$APP_NAME.app"
 command -v swiftc >/dev/null || { echo "swiftc не найден. Выполни: xcode-select --install"; exit 1; }
 SDK="$(xcrun --show-sdk-path --sdk macosx)"
 
+SOURCES=("$ROOT"/Sources/*.swift)
+[ -e "${SOURCES[0]}" ] || { echo "Нет исходников в $ROOT/Sources"; exit 1; }
+
 echo "==> Чистка"
 rm -rf "$BUILD"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$BUILD/slices"
 
 for arch in $ARCHS; do
-  echo "==> Компиляция ($arch, macOS $MIN_MACOS+, SDK: $(basename "$SDK"))"
+  echo "==> Компиляция ($arch, ${#SOURCES[@]} файлов, macOS $MIN_MACOS+, SDK: $(basename "$SDK"))"
   swiftc \
     -O -whole-module-optimization \
     -parse-as-library \
@@ -30,7 +33,7 @@ for arch in $ARCHS; do
     -target "${arch}-apple-macos${MIN_MACOS}" \
     -framework SwiftUI -framework AppKit \
     -o "$BUILD/slices/$APP_NAME-$arch" \
-    "$ROOT/$APP_NAME.swift"
+    "${SOURCES[@]}"
 done
 
 echo "==> Склейка universal binary ($ARCHS)"
