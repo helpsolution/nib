@@ -7,12 +7,21 @@ final class ColumnTextView: NSTextView {
     var maxLineWidth: CGFloat = Prefs.lineWidth
 
     override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
+        // Ширину диктует видимая область, а не сам textview: его собственная ширина
+        // равна container + 2×inset, и считать inset от неё — замкнутый круг,
+        // в котором любая ширина ≥ maxLineWidth+60 самоподдерживается (текст уезжает за край).
+        var size = newSize
+        if let clip = enclosingScrollView?.contentView {
+            size.width = clip.bounds.width
+        }
+        super.setFrameSize(size)
         refreshInsets()
     }
 
     func refreshInsets() {
-        let h = max(30, (bounds.width - maxLineWidth) / 2)
+        // Верхняя граница bounds.width/2 нужна для самого первого layout с нулевой шириной:
+        // без неё контейнер получил бы отрицательную ширину.
+        let h = min(max(30, (bounds.width - maxLineWidth) / 2), bounds.width / 2)
         let inset = NSSize(width: h, height: 48)
         if textContainerInset != inset { textContainerInset = inset }
     }
