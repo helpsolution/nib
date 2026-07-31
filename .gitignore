@@ -8,3 +8,8 @@ build/
 .idea/
 .claude/
 *.xcuserstate
+
+nib.iml
+
+# Отчёты агентов
+swarm-report/
