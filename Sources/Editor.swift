@@ -132,8 +132,25 @@ struct Editor: NSViewRepresentable {
             let work = DispatchWorkItem { [weak self] in
                 guard let self, let tv = self.textView, let storage = tv.textStorage else { return }
                 let sel = tv.selectedRanges
+                // Подсветка сначала сбрасывает атрибуты на весь документ и только потом
+                // возвращает крупные шрифты заголовков. В этот момент документ короче,
+                // и прокрутка подрезается под временную высоту — без сохранения позиции
+                // правка в конце файла отбрасывала на сотни точек вверх.
+                let clip = tv.enclosingScrollView?.contentView
+                let origin = clip?.bounds.origin
                 Highlighter.apply(to: storage, size: self.parent.fontSize)
                 tv.selectedRanges = sel
+                if let clip, let origin {
+                    let restore = {
+                        guard clip.bounds.origin != origin else { return }
+                        clip.scroll(to: origin)
+                        tv.enclosingScrollView?.reflectScrolledClipView(clip)
+                    }
+                    restore()
+                    // Раскладка досчитывается уже после текущего прохода runloop,
+                    // и подрезает прокрутку повторно — возвращаем позицию ещё раз.
+                    DispatchQueue.main.async(execute: restore)
+                }
                 let w = Self.words(tv.string)
                 let c = tv.string.count
                 DispatchQueue.main.async { self.parent.onStats(w, c) }
