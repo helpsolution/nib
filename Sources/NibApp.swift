@@ -5,6 +5,9 @@ import SwiftUI
 @main
 struct NibApp: App {
     @FocusedValue(\.zoom) var zoom
+    @AppStorage("appearance") private var appearance: Appearance = .system
+
+    init() { Prefs.appearance.apply() }
 
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
@@ -26,6 +29,15 @@ struct NibApp: App {
                     .keyboardShortcut("]", modifiers: [.command, .option])
                 Button("Колонка уже") { zoom?.tighter() }
                     .keyboardShortcut("[", modifiers: [.command, .option])
+                Divider()
+                // Picker в CommandGroup рисуется как пункты меню с галочкой.
+                Picker("Оформление", selection: Binding(
+                    get: { appearance },
+                    set: { appearance = $0; $0.apply() }
+                )) {
+                    ForEach(Appearance.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
             }
             CommandGroup(replacing: .help) { }
         }
