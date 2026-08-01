@@ -111,7 +111,7 @@ if [ -f "$ROOT/icon_1024.png" ]; then
 fi
 
 echo "==> Подпись (ad-hoc)"
-codesign --force --deep --sign - "$APP"
+codesign --force --sign - "$APP"   # --deep объявлен Apple устаревшим; вложенного кода в бандле нет
 
 echo "==> DMG"
 DMG="$BUILD/$APP_NAME-$VERSION.dmg"

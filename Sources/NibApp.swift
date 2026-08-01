@@ -5,7 +5,9 @@ import SwiftUI
 @main
 struct NibApp: App {
     @FocusedValue(\.zoom) var zoom
-    @AppStorage("appearance") private var appearance: Appearance = .system
+    @AppStorage(Prefs.Key.appearance) private var appearance: Appearance = .system
+
+    private static let defaultWindow = CGSize(width: 1240, height: 840)
 
     init() { Prefs.appearance.apply() }
 
@@ -15,7 +17,7 @@ struct NibApp: App {
         }
         // Дефолт SwiftUI — 900×450, в него влезает полтора десятка строк.
         // Применяется только к окну без сохранённой геометрии: свой размер система запомнит.
-        .defaultSize(width: 1240, height: 840)
+        .defaultSize(Self.defaultWindow)
         .commands {
             CommandGroup(after: .toolbar) {
                 Button("Крупнее") { zoom?.inc() }
