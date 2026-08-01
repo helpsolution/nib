@@ -3,6 +3,7 @@
 import Foundation
 
 runTypoTests()
+runMetricsAnchorTests()
 runPrefsTests()
 runDocumentTests()
 runHighlighterTests()
