@@ -10,6 +10,17 @@ struct EditorScreen: View {
     @State private var words = 0
     @State private var chars = 0
 
+    enum Layout {
+        /// Меньше этого окно складывается: колонка упирается в минимальные поля.
+        static let minWindow = CGSize(width: 480, height: 360)
+        static let counterFontSize: CGFloat = 11
+        static let counterInset: CGFloat = 12
+        static let counterPaddingH: CGFloat = 14
+        static let counterPaddingV: CGFloat = 6
+        /// Счётчик лежит поверх текста, поэтому подложка полупрозрачная.
+        static let counterBackgroundOpacity: CGFloat = 0.75
+    }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Editor(text: $document.text,
@@ -18,15 +29,15 @@ struct EditorScreen: View {
                    onStats: { w, c in words = w; chars = c })
 
             Text("\(words) сл · \(chars)")
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: Layout.counterFontSize, design: .monospaced))
                 .foregroundStyle(.tertiary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(.background.opacity(0.75), in: Capsule())
-                .padding(12)
+                .padding(.horizontal, Layout.counterPaddingH)
+                .padding(.vertical, Layout.counterPaddingV)
+                .background(.background.opacity(Layout.counterBackgroundOpacity), in: Capsule())
+                .padding(Layout.counterInset)
                 .allowsHitTesting(false)
         }
-        .frame(minWidth: 480, minHeight: 360)
+        .frame(minWidth: Layout.minWindow.width, minHeight: Layout.minWindow.height)
         .background(WindowChrome())
         .focusedSceneValue(\.zoom, ZoomActions(
             inc:     { set(fontSize + Prefs.fontStep) },
