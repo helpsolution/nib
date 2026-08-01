@@ -52,6 +52,14 @@ enum Typo {
         NSFont.monospacedSystemFont(ofSize: size * Metrics.monoScale, weight: .regular)
     }
 
+    /// Шрифт заголовка по уровню: `#` крупнее всех, `######` почти как основной текст.
+    ///
+    /// Скобка вокруг вычитания обязательна — см. предупреждение в Metrics.
+    static func heading(_ size: CGFloat, level: Int) -> NSFont {
+        let scale = 1.0 + (Metrics.headingScale - Metrics.headingScaleStep * CGFloat(level - 1))
+        return bold(body(size * scale))
+    }
+
     static func paragraph(_ size: CGFloat) -> NSParagraphStyle {
         let p = NSMutableParagraphStyle()
         // Здесь был lineHeightMultiple = 1.5. Он раздувает бокс строки, а каретка рисуется
@@ -64,6 +72,14 @@ enum Typo {
         p.lineSpacing = (body(size).ascender - body(size).descender) * Metrics.lineSpacing
         p.paragraphSpacing = size * Metrics.paragraphSpacing
         p.defaultTabInterval = size * Metrics.tabWidth
+        return p
+    }
+
+    /// Абзацный стиль заголовка: тот же ритм плюс воздух сверху.
+    static func headingParagraph(_ size: CGFloat) -> NSParagraphStyle {
+        let p = NSMutableParagraphStyle()
+        p.setParagraphStyle(paragraph(size))
+        p.paragraphSpacingBefore = size * Metrics.headingSpacingBefore
         return p
     }
 }

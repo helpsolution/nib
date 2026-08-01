@@ -59,15 +59,8 @@ struct Highlighter {
         heading.enumerateMatches(in: string, range: scope) { m, _, _ in
             guard let m else { return }
             let level = m.range(at: 1).length
-            // Скобка обязательна: без неё сложение переставляется и кегли
-            // h4 и h5 уезжают на 1 ULP. Подробности — в Typo.Metrics.
-            let scale = 1.0 + (Typo.Metrics.headingScale
-                               - Typo.Metrics.headingScaleStep * CGFloat(level - 1))
-            let f = Typo.bold(Typo.body(size * scale))
-            let p = NSMutableParagraphStyle()
-            p.setParagraphStyle(Typo.paragraph(size))
-            p.paragraphSpacingBefore = size * Typo.Metrics.headingSpacingBefore
-            set([.font: f, .paragraphStyle: p], m.range)
+            set([.font: Typo.heading(size, level: level),
+                 .paragraphStyle: Typo.headingParagraph(size)], m.range)
             set([.foregroundColor: faded], m.range(at: 1))
         }
 

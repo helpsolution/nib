@@ -37,7 +37,16 @@ func runMetricsAnchorTests() {
             let point: CGFloat = s.font(at: index(of: marker, in: md))!.pointSize
             Check.equal(point.bitPattern, expected[level - 1],
                         "h\(level): кегль бит-в-бит (\(point))")
+
+            // Подсветка обязана выдавать ровно то, что отдаёт Typo напрямую:
+            // иначе расчёт кегля разъедется на два места.
+            let direct: CGFloat = Typo.heading(17, level: level).pointSize
+            Check.equal(direct.bitPattern, expected[level - 1],
+                        "h\(level): Typo.heading даёт тот же кегль")
         }
+
+        Check.ok(Typo.heading(17, level: 1).fontDescriptor.symbolicTraits.contains(.bold),
+                 "заголовок жирный")
     }
 
     Check.suite("Якорь: производные от кегля") {
@@ -61,6 +70,16 @@ func runMetricsAnchorTests() {
         let before: CGFloat = style?.paragraphSpacingBefore ?? 0
         Check.equal(before.bitPattern, (size * 0.8).bitPattern,
                     "воздух перед заголовком — ровно size * 0.8")
+
+        // Стиль заголовка — это стиль абзаца плюс воздух сверху, не что-то своё.
+        let hp = Typo.headingParagraph(size)
+        Check.equal(hp.paragraphSpacingBefore.bitPattern, (size * 0.8).bitPattern,
+                    "Typo.headingParagraph даёт тот же воздух")
+        Check.equal(hp.lineSpacing.bitPattern, p.lineSpacing.bitPattern,
+                    "ритм строки у заголовка тот же, что у абзаца")
+        Check.equal(hp.paragraphSpacing.bitPattern, p.paragraphSpacing.bitPattern,
+                    "отбивка снизу у заголовка та же")
+        Check.equal(p.paragraphSpacingBefore, 0, "у обычного абзаца воздуха сверху нет")
     }
 
     Check.suite("Якорь: межстрочный интервал") {
