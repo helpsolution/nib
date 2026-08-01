@@ -5,7 +5,7 @@ import SwiftUI
 @main
 struct NibApp: App {
     @FocusedValue(\.zoom) var zoom
-    @AppStorage("appearance") private var appearance: Appearance = .system
+    @AppStorage(Prefs.Key.appearance) private var appearance: Appearance = .system
 
     init() { Prefs.appearance.apply() }
 

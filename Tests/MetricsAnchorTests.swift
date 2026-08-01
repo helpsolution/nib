@@ -97,15 +97,34 @@ func runMetricsAnchorTests() {
                     "вертикальный отступ — ровно 48")
     }
 
+    // Литералы слева, именованные значения справа: смысл проверки в том, что
+    // вынос констант не сдвинул ни одного числа. Заменить литералы на имена
+    // здесь — значит сравнить константу с самой собой.
     Check.suite("Якорь: границы и шаги масштаба") {
-        // Значения зашиты в EditorScreen литералами и снаружи недоступны.
-        // Пока их не вынесли — фиксируем сам факт: 11...32, 420...1100, шаг 60,
-        // сброс к 17. Если после рефакторинга числа станут именованными,
-        // проверка должна сослаться на них, а не на литералы.
-        Check.close(Prefs.fontSize, 17, "сброс кегля ведёт к 17")
-        Check.close(Prefs.lineWidth, 700, "ширина по умолчанию 700")
-        Check.ok((11...32).contains(CGFloat(17)), "кегль по умолчанию внутри 11...32")
-        Check.ok((420...1100).contains(CGFloat(700)), "ширина по умолчанию внутри 420...1100")
-        Check.close(700 + 60, 760, "шаг ширины 60")
+        Check.close(Prefs.defaultFontSize, 17, "кегль по умолчанию 17")
+        Check.close(Prefs.defaultLineWidth, 700, "ширина по умолчанию 700")
+        Check.close(Prefs.fontRange.lowerBound, 11, "нижняя граница кегля 11")
+        Check.close(Prefs.fontRange.upperBound, 32, "верхняя граница кегля 32")
+        Check.close(Prefs.widthRange.lowerBound, 420, "нижняя граница ширины 420")
+        Check.close(Prefs.widthRange.upperBound, 1100, "верхняя граница ширины 1100")
+        Check.close(Prefs.fontStep, 1, "шаг кегля 1")
+        Check.close(Prefs.widthStep, 60, "шаг ширины 60")
+
+        // Ограничители должны вести себя ровно как прежние min(32, max(11, v)).
+        Check.close(Prefs.clampFont(999), 32, "кегль сверху ограничен")
+        Check.close(Prefs.clampFont(0), 11, "кегль снизу ограничен")
+        Check.close(Prefs.clampFont(17), 17, "кегль внутри диапазона не трогается")
+        Check.close(Prefs.clampWidth(9999), 1100, "ширина сверху ограничена")
+        Check.close(Prefs.clampWidth(1), 420, "ширина снизу ограничена")
+        Check.close(Prefs.clampWidth(700), 700, "ширина внутри диапазона не трогается")
+    }
+
+    Check.suite("Якорь: ключи UserDefaults не переименованы") {
+        // Переименование ключа — молчаливая потеря настроек у всех, кто уже
+        // пользуется приложением: старое значение остаётся лежать под старым
+        // именем, а читается новое, пустое.
+        Check.equal(Prefs.Key.fontSize, "fontSize", "ключ кегля")
+        Check.equal(Prefs.Key.lineWidth, "lineWidth", "ключ ширины")
+        Check.equal(Prefs.Key.appearance, "appearance", "ключ оформления")
     }
 }

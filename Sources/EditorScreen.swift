@@ -29,21 +29,21 @@ struct EditorScreen: View {
         .frame(minWidth: 480, minHeight: 360)
         .background(WindowChrome())
         .focusedSceneValue(\.zoom, ZoomActions(
-            inc:   { set(fontSize + 1) },
-            dec:   { set(fontSize - 1) },
-            reset: { set(17) },
-            wider: { setWidth(lineWidth + 60) },
-            tighter: { setWidth(lineWidth - 60) }
+            inc:     { set(fontSize + Prefs.fontStep) },
+            dec:     { set(fontSize - Prefs.fontStep) },
+            reset:   { set(Prefs.defaultFontSize) },
+            wider:   { setWidth(lineWidth + Prefs.widthStep) },
+            tighter: { setWidth(lineWidth - Prefs.widthStep) }
         ))
     }
 
     private func set(_ v: CGFloat) {
-        let clamped = min(32, max(11, v))
+        let clamped = Prefs.clampFont(v)
         fontSize = clamped
         Prefs.fontSize = clamped
     }
     private func setWidth(_ v: CGFloat) {
-        let clamped = min(1100, max(420, v))
+        let clamped = Prefs.clampWidth(v)
         lineWidth = clamped
         Prefs.lineWidth = clamped
     }

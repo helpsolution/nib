@@ -31,23 +31,54 @@ enum Appearance: String, CaseIterable, Identifiable {
 }
 
 enum Prefs {
+    /// Ключи в одном месте: раньше строка «fontSize» была написана четырежды —
+    /// в геттере, в сеттере и в @AppStorage, — и опечатка в любой из них
+    /// молча дала бы отдельную настройку вместо общей.
+    enum Key {
+        static let fontSize = "fontSize"
+        static let lineWidth = "lineWidth"
+        static let appearance = "appearance"
+    }
+
+    /// Кегль: ниже 11 текст нечитаем, выше 32 в колонку помещается пара слов.
+    static let defaultFontSize: CGFloat = 17
+    static let fontRange: ClosedRange<CGFloat> = 11...32
+    static let fontStep: CGFloat = 1
+
+    /// Ширина колонки: ниже 420 строка рвётся на середине фразы,
+    /// выше 1100 теряется смысл колонки.
+    static let defaultLineWidth: CGFloat = 700
+    static let widthRange: ClosedRange<CGFloat> = 420...1100
+    static let widthStep: CGFloat = 60
+
+    static func clampFont(_ value: CGFloat) -> CGFloat {
+        min(fontRange.upperBound, max(fontRange.lowerBound, value))
+    }
+
+    static func clampWidth(_ value: CGFloat) -> CGFloat {
+        min(widthRange.upperBound, max(widthRange.lowerBound, value))
+    }
+
     static var appearance: Appearance {
-        get { Appearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "appearance") }
+        get { Appearance(rawValue: UserDefaults.standard.string(forKey: Key.appearance) ?? "") ?? .system }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Key.appearance) }
     }
 
     static var fontSize: CGFloat {
-        get {
-            let v = UserDefaults.standard.double(forKey: "fontSize")
-            return v == 0 ? 17 : CGFloat(v)
-        }
-        set { UserDefaults.standard.set(Double(newValue), forKey: "fontSize") }
+        get { stored(Key.fontSize, default: defaultFontSize) }
+        set { UserDefaults.standard.set(Double(newValue), forKey: Key.fontSize) }
     }
+
     static var lineWidth: CGFloat {
-        get {
-            let v = UserDefaults.standard.double(forKey: "lineWidth")
-            return v == 0 ? 700 : CGFloat(v)
-        }
-        set { UserDefaults.standard.set(Double(newValue), forKey: "lineWidth") }
+        get { stored(Key.lineWidth, default: defaultLineWidth) }
+        set { UserDefaults.standard.set(Double(newValue), forKey: Key.lineWidth) }
+    }
+
+    /// UserDefaults отдаёт 0 и для «ключа нет», и для записанного нуля.
+    /// Ноль тут невозможен — оба значения ограничены снизу, — так что
+    /// трактуем его как отсутствие.
+    private static func stored(_ key: String, default fallback: CGFloat) -> CGFloat {
+        let value = UserDefaults.standard.double(forKey: key)
+        return value == 0 ? fallback : CGFloat(value)
     }
 }
