@@ -11,6 +11,30 @@ enum Typo {
         "JetBrains Mono", "SF Mono", "Menlo"
     ]
 
+    /// Коэффициенты набора. Каждый из них видно глазом, и правят их именно здесь.
+    ///
+    /// Порядок операций в формулах ниже менять нельзя. Откаченный рефакторинг
+    /// (af0ff8c) переписал скобку в масштабе заголовка, и кегли h4 и h5 уехали
+    /// на 1 ULP — вместе с метриками глифов и, возможно, переносом строки.
+    /// Тест-якорь в Tests/MetricsAnchorTests.swift держит числа бит-в-бит.
+    enum Metrics {
+        /// Межстрочный интервал в долях натуральной высоты шрифта.
+        /// Половина даёт привычный line-height 1.5.
+        static let lineSpacing: CGFloat = 0.5
+        /// Отбивка между абзацами, в долях кегля.
+        static let paragraphSpacing: CGFloat = 0.55
+        /// Дополнительный воздух перед заголовком, в долях кегля.
+        static let headingSpacingBefore: CGFloat = 0.8
+        /// Заголовок первого уровня крупнее основного текста на headingScale,
+        /// каждый следующий уровень — на headingScaleStep мельче предыдущего.
+        static let headingScale: CGFloat = 0.30
+        static let headingScaleStep: CGFloat = 0.04
+        /// Код набирается чуть мельче: моноширинный кажется крупнее при равном кегле.
+        static let monoScale: CGFloat = 0.94
+        /// Ширина табуляции в долях кегля.
+        static let tabWidth: CGFloat = 2
+    }
+
     static func body(_ size: CGFloat) -> NSFont {
         for name in preferred {
             if let f = NSFont(name: name, size: size) { return f }
@@ -25,7 +49,7 @@ enum Typo {
         NSFontManager.shared.convert(f, toHaveTrait: .italicFontMask)
     }
     static func mono(_ size: CGFloat) -> NSFont {
-        NSFont.monospacedSystemFont(ofSize: size * 0.94, weight: .regular)
+        NSFont.monospacedSystemFont(ofSize: size * Metrics.monoScale, weight: .regular)
     }
 
     static func paragraph(_ size: CGFloat) -> NSParagraphStyle {
@@ -37,9 +61,9 @@ enum Typo {
         // задать высоту строки явно, хоть множителем, хоть minimumLineHeight, и каретка
         // снова займёт весь шаг. Считаем от метрик шрифта, а не от кегля: на другой гарнитуре
         // константа вроде size * 0.58 дала бы другой ритм.
-        p.lineSpacing = (body(size).ascender - body(size).descender) * 0.5
-        p.paragraphSpacing = size * 0.55
-        p.defaultTabInterval = size * 2
+        p.lineSpacing = (body(size).ascender - body(size).descender) * Metrics.lineSpacing
+        p.paragraphSpacing = size * Metrics.paragraphSpacing
+        p.defaultTabInterval = size * Metrics.tabWidth
         return p
     }
 }
