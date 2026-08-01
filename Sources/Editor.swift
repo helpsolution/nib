@@ -6,6 +6,16 @@ import AppKit
 final class ColumnTextView: NSTextView {
     var maxLineWidth: CGFloat = Prefs.lineWidth
 
+    enum Layout {
+        /// Отступ сверху и снизу: текст не должен упираться в тайтлбар.
+        static let verticalInset: CGFloat = 48
+        /// Минимальный боковой отступ, когда окно уже колонки.
+        static let minSideInset: CGFloat = 30
+        /// Размер до первой раскладки. Через мгновение его заменит реальный,
+        /// но с нулевым текстовый контейнер успевает посчитать себя пустым.
+        static let initialFrame = NSRect(x: 0, y: 0, width: 800, height: 600)
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         // Ширину диктует видимая область, а не сам textview: его собственная ширина
         // равна container + 2×inset, и считать inset от неё — замкнутый круг,
@@ -21,8 +31,8 @@ final class ColumnTextView: NSTextView {
     func refreshInsets() {
         // Верхняя граница bounds.width/2 нужна для самого первого layout с нулевой шириной:
         // без неё контейнер получил бы отрицательную ширину.
-        let h = min(max(30, (bounds.width - maxLineWidth) / 2), bounds.width / 2)
-        let inset = NSSize(width: h, height: 48)
+        let side = min(max(Layout.minSideInset, (bounds.width - maxLineWidth) / 2), bounds.width / 2)
+        let inset = NSSize(width: side, height: Layout.verticalInset)
         if textContainerInset != inset { textContainerInset = inset }
     }
 }
@@ -66,18 +76,14 @@ struct Editor: NSViewRepresentable {
         tv.isHorizontallyResizable = false
         tv.isVerticallyResizable = true
         tv.autoresizingMask = [.width]
-        tv.minSize = NSSize(width: 0, height: 0)
+        tv.minSize = .zero
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                             height: CGFloat.greatestFiniteMagnitude)
-        tv.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        tv.frame = ColumnTextView.Layout.initialFrame
         tv.maxLineWidth = lineWidth
         tv.string = text
         tv.textStorage?.delegate = context.coordinator
-        tv.typingAttributes = [
-            .font: Typo.body(fontSize),
-            .foregroundColor: NSColor.textColor,
-            .paragraphStyle: Typo.paragraph(fontSize)
-        ]
+        tv.typingAttributes = Self.typingAttributes(fontSize)
 
         scroll.documentView = tv
         context.coordinator.textView = tv
@@ -90,25 +96,27 @@ struct Editor: NSViewRepresentable {
         guard let tv = scroll.documentView as? ColumnTextView else { return }
         context.coordinator.parent = self
 
-        var needsHighlight = false
-        if tv.string != text {
-            let sel = tv.selectedRange()
-            tv.string = text
-            tv.setSelectedRange(NSRange(location: min(sel.location, text.utf16.count), length: 0))
-            needsHighlight = true
-        }
+        // Текст пришёл извне — например, документ откатили. Перекраску вызовет
+        // сам обработчик правки, повторять её здесь не нужно.
+        if tv.string != text { context.coordinator.replaceText(with: text) }
+
         if context.coordinator.appliedSize != fontSize || tv.maxLineWidth != lineWidth {
             context.coordinator.appliedSize = fontSize
             tv.maxLineWidth = lineWidth
             tv.refreshInsets()
-            tv.typingAttributes = [
-                .font: Typo.body(fontSize),
-                .foregroundColor: NSColor.textColor,
-                .paragraphStyle: Typo.paragraph(fontSize)
-            ]
-            needsHighlight = true
+            tv.typingAttributes = Self.typingAttributes(fontSize)
+            context.coordinator.highlight(dirty: nil)
         }
-        if needsHighlight { context.coordinator.highlight(dirty: nil) }
+    }
+
+    /// Оформление ещё не набранного текста: без него первый символ на пустой
+    /// строке появляется системным шрифтом и прыгает при перекраске.
+    static func typingAttributes(_ size: CGFloat) -> [NSAttributedString.Key: Any] {
+        [
+            .font: Typo.body(size),
+            .foregroundColor: NSColor.textColor,
+            .paragraphStyle: Typo.paragraph(size)
+        ]
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
@@ -117,6 +125,10 @@ struct Editor: NSViewRepresentable {
         var appliedSize: CGFloat
         private var dirty: NSRange?
         private var pendingStats: DispatchWorkItem?
+
+        /// Счётчик слов считает весь документ, поэтому отложен. Всё остальное
+        /// делается сразу: перекраска затронутого куска стоит доли миллисекунды.
+        private static let statsDelay: TimeInterval = 0.2
 
         init(_ parent: Editor) {
             self.parent = parent
@@ -138,25 +150,36 @@ struct Editor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let tv = textView else { return }
-            parent.text = tv.string
+            // Сравнение не для экономии: присваивание во время обновления вида
+            // заставляет SwiftUI ругаться на изменение состояния из середины цикла.
+            if parent.text != tv.string { parent.text = tv.string }
             highlight(dirty: dirty)
         }
 
+        /// Замена всего текста извне. Идёт через shouldChangeText/didChangeText,
+        /// потому что прямая запись в `string` минует NSUndoManager и обнуляет
+        /// историю правок при живом `allowsUndo`.
+        func replaceText(with text: String) {
+            guard let tv = textView, let storage = tv.textStorage else { return }
+            let whole = NSRange(location: 0, length: (tv.string as NSString).length)
+            let caret = tv.selectedRange().location
+            guard tv.shouldChangeText(in: whole, replacementString: text) else { return }
+            storage.replaceCharacters(in: whole, with: text)
+            tv.didChangeText()
+            tv.setSelectedRange(NSRange(location: min(caret, (text as NSString).length), length: 0))
+        }
+
         /// Перекраска. `dirty == nil` — весь документ: открытие файла, смена
-        /// шрифта или ширины колонки. Идёт синхронно: инкрементальный проход
-        /// стоит доли миллисекунды, и откладывать его незачем — раньше из-за
-        /// дебаунса стиль приезжал только после паузы в наборе.
+        /// шрифта или ширины колонки.
         func highlight(dirty scope: NSRange?) {
             guard let tv = textView, let storage = tv.textStorage else { return }
-            let sel = tv.selectedRanges
+            let selection = tv.selectedRanges
             Highlighter.apply(to: storage, size: parent.fontSize, in: scope)
-            tv.selectedRanges = sel
+            tv.selectedRanges = selection
             dirty = nil
             scheduleStats()
         }
 
-        /// Счётчик слов — единственное, что осталось отложенным: он считает
-        /// весь документ, а видит его читатель боковым зрением.
         private func scheduleStats() {
             pendingStats?.cancel()
             let work = DispatchWorkItem { [weak self] in
@@ -164,7 +187,7 @@ struct Editor: NSViewRepresentable {
                 self.parent.onStats(Self.words(tv.string), tv.string.count)
             }
             pendingStats = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.statsDelay, execute: work)
         }
 
         static func words(_ s: String) -> Int {
