@@ -72,6 +72,7 @@ struct Editor: NSViewRepresentable {
         tv.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         tv.maxLineWidth = lineWidth
         tv.string = text
+        tv.textStorage?.delegate = context.coordinator
         tv.typingAttributes = [
             .font: Typo.body(fontSize),
             .foregroundColor: NSColor.textColor,
@@ -80,7 +81,7 @@ struct Editor: NSViewRepresentable {
 
         scroll.documentView = tv
         context.coordinator.textView = tv
-        context.coordinator.rehighlight(force: true)
+        context.coordinator.highlight(dirty: nil)
         DispatchQueue.main.async { tv.window?.makeFirstResponder(tv) }
         return scroll
     }
@@ -107,60 +108,63 @@ struct Editor: NSViewRepresentable {
             ]
             needsHighlight = true
         }
-        if needsHighlight { context.coordinator.rehighlight(force: true) }
+        if needsHighlight { context.coordinator.highlight(dirty: nil) }
     }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: Editor
         weak var textView: ColumnTextView?
         var appliedSize: CGFloat
-        private var pending: DispatchWorkItem?
+        private var dirty: NSRange?
+        private var pendingStats: DispatchWorkItem?
 
         init(_ parent: Editor) {
             self.parent = parent
             self.appliedSize = parent.fontSize
         }
 
+        /// Хранилище само сообщает, какой кусок изменился, — это точнее и дешевле,
+        /// чем сравнивать со снимком прошлого текста. Снимок вдобавок пришлось бы
+        /// копировать целиком: `NSTextView.string` отдаёт живую ссылку на хранилище,
+        /// и сохранённое значение менялось бы вместе с текстом.
+        func textStorage(_ storage: NSTextStorage,
+                         didProcessEditing edited: NSTextStorageEditActions,
+                         range: NSRange,
+                         changeInLength delta: Int) {
+            // Правка атрибутов — это работа самой подсветки, реагировать не на что.
+            guard edited.contains(.editedCharacters) else { return }
+            dirty = dirty.map { NSUnionRange($0, range) } ?? range
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let tv = textView else { return }
             parent.text = tv.string
-            rehighlight(force: false)
+            highlight(dirty: dirty)
         }
 
-        func rehighlight(force: Bool) {
-            pending?.cancel()
+        /// Перекраска. `dirty == nil` — весь документ: открытие файла, смена
+        /// шрифта или ширины колонки. Идёт синхронно: инкрементальный проход
+        /// стоит доли миллисекунды, и откладывать его незачем — раньше из-за
+        /// дебаунса стиль приезжал только после паузы в наборе.
+        func highlight(dirty scope: NSRange?) {
+            guard let tv = textView, let storage = tv.textStorage else { return }
+            let sel = tv.selectedRanges
+            Highlighter.apply(to: storage, size: parent.fontSize, in: scope)
+            tv.selectedRanges = sel
+            dirty = nil
+            scheduleStats()
+        }
+
+        /// Счётчик слов — единственное, что осталось отложенным: он считает
+        /// весь документ, а видит его читатель боковым зрением.
+        private func scheduleStats() {
+            pendingStats?.cancel()
             let work = DispatchWorkItem { [weak self] in
-                guard let self, let tv = self.textView, let storage = tv.textStorage else { return }
-                let sel = tv.selectedRanges
-                // Подсветка сначала сбрасывает атрибуты на весь документ и только потом
-                // возвращает крупные шрифты заголовков. В этот момент документ короче,
-                // и прокрутка подрезается под временную высоту — без сохранения позиции
-                // правка в конце файла отбрасывала на сотни точек вверх.
-                let clip = tv.enclosingScrollView?.contentView
-                let origin = clip?.bounds.origin
-                Highlighter.apply(to: storage, size: self.parent.fontSize)
-                tv.selectedRanges = sel
-                if let clip, let origin {
-                    let restore = {
-                        guard clip.bounds.origin != origin else { return }
-                        clip.scroll(to: origin)
-                        tv.enclosingScrollView?.reflectScrolledClipView(clip)
-                    }
-                    restore()
-                    // Раскладка досчитывается уже после текущего прохода runloop,
-                    // и подрезает прокрутку повторно — возвращаем позицию ещё раз.
-                    DispatchQueue.main.async(execute: restore)
-                }
-                let w = Self.words(tv.string)
-                let c = tv.string.count
-                DispatchQueue.main.async { self.parent.onStats(w, c) }
+                guard let self, let tv = self.textView else { return }
+                self.parent.onStats(Self.words(tv.string), tv.string.count)
             }
-            pending = work
-            if force {
-                work.perform()
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.09, execute: work)
-            }
+            pendingStats = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
         }
 
         static func words(_ s: String) -> Int {
