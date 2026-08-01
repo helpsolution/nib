@@ -4,6 +4,9 @@ import AppKit
 
 struct Highlighter {
 
+    /// Паттерны заданы литералами и разбираются один раз при первом обращении.
+    /// Ошибка в них — это опечатка в исходнике, а не ситуация времени выполнения,
+    /// поэтому падаем сразу, а не тащим Optional через весь файл.
     private static func rx(_ p: String) -> NSRegularExpression {
         try! NSRegularExpression(pattern: p, options: [.anchorsMatchLines])
     }
@@ -49,29 +52,33 @@ struct Highlighter {
             .paragraphStyle: Typo.paragraph(size)
         ], range: scope)
 
-        func set(_ attrs: [NSAttributedString.Key: Any], _ r: NSRange) {
+        /// Блоки кода красятся первыми и дальше считаются занятыми: внутри них
+        /// разметка — это текст программы, а не разметка. Без этого `**` и `#`
+        /// в примере кода подсвечивались бы как жирный и заголовок.
+        let fenced = fence.matches(in: string, range: scope).map(\.range)
+
+        func paint(_ attrs: [NSAttributedString.Key: Any], _ r: NSRange) {
             guard r.location != NSNotFound, r.length > 0,
                   NSMaxRange(r) <= text.length else { return }
             storage.addAttributes(attrs, range: r)
+        }
+
+        func set(_ attrs: [NSAttributedString.Key: Any], _ r: NSRange) {
+            guard !fenced.contains(where: { NSIntersectionRange($0, r).length > 0 }) else { return }
+            paint(attrs, r)
+        }
+
+        for r in fenced {
+            paint([.font: Typo.mono(size), .foregroundColor: dim], r)
         }
 
         // Заголовки: маркер гасим, текст — жирным и чуть крупнее
         heading.enumerateMatches(in: string, range: scope) { m, _, _ in
             guard let m else { return }
             let level = m.range(at: 1).length
-            let scale = 1.0 + (0.30 - 0.04 * CGFloat(level - 1))
-            let f = Typo.bold(Typo.body(size * scale))
-            let p = NSMutableParagraphStyle()
-            p.setParagraphStyle(Typo.paragraph(size))
-            p.paragraphSpacingBefore = size * 0.8
-            set([.font: f, .paragraphStyle: p], m.range)
+            set([.font: Typo.heading(size, level: level),
+                 .paragraphStyle: Typo.headingParagraph(size)], m.range)
             set([.foregroundColor: faded], m.range(at: 1))
-        }
-
-        // Блоки кода
-        fence.enumerateMatches(in: string, range: scope) { m, _, _ in
-            guard let m else { return }
-            set([.font: Typo.mono(size), .foregroundColor: dim], m.range)
         }
 
         // Цитаты
@@ -133,8 +140,8 @@ struct Highlighter {
     /// бесполезна. Плюс соседние абзацы: правка может сделать строку началом
     /// или концом блока. Плюс блок кода целиком, если правка попала внутрь.
     private static func blockRange(around dirty: NSRange, in text: NSString) -> NSRange {
-        let clamped = NSRange(location: min(dirty.location, text.length),
-                              length: min(dirty.length, text.length - min(dirty.location, text.length)))
+        let start = min(dirty.location, text.length)
+        let clamped = NSRange(location: start, length: min(dirty.length, text.length - start))
         var r = text.paragraphRange(for: clamped)
         if r.location > 0 {
             r = NSUnionRange(text.paragraphRange(for: NSRange(location: r.location - 1, length: 0)), r)
@@ -159,6 +166,14 @@ struct Highlighter {
 
         for f in fences where NSIntersectionRange(f, r).length > 0 || NSLocationInRange(f.location, r) {
             return full
+        }
+
+        // Нечётное число кавычек — либо блок ещё не закрыт, либо одну только что
+        // снесли. В обоих случаях по удалённой кавычке судить не по чему: её уже нет
+        // в тексте, а бывший блок остался покрашенным. Перекрашиваем всё от первой
+        // кавычки до конца — дальше этого последствия не расходятся.
+        if fences.count % 2 == 1, let first = fences.first {
+            return NSUnionRange(r, NSRange(location: first.location, length: text.length - first.location))
         }
 
         var result = r
