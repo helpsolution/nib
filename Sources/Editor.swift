@@ -6,6 +6,16 @@ import AppKit
 final class ColumnTextView: NSTextView {
     var maxLineWidth: CGFloat = Prefs.lineWidth
 
+    enum Layout {
+        /// Отступ сверху и снизу: текст не должен упираться в тайтлбар.
+        static let verticalInset: CGFloat = 48
+        /// Минимальное боковое поле, когда окно уже колонки.
+        static let minSideInset: CGFloat = 30
+        /// Размер до первой раскладки. Через мгновение его заменит настоящий,
+        /// но с нулевым текстовый контейнер успевает посчитать себя пустым.
+        static let initialFrame = NSRect(x: 0, y: 0, width: 800, height: 600)
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         // Ширину диктует видимая область, а не сам textview: его собственная ширина
         // равна container + 2×inset, и считать inset от неё — замкнутый круг,
@@ -21,8 +31,9 @@ final class ColumnTextView: NSTextView {
     func refreshInsets() {
         // Верхняя граница bounds.width/2 нужна для самого первого layout с нулевой шириной:
         // без неё контейнер получил бы отрицательную ширину.
-        let h = min(max(30, (bounds.width - maxLineWidth) / 2), bounds.width / 2)
-        let inset = NSSize(width: h, height: 48)
+        let side = min(max(Layout.minSideInset, (bounds.width - maxLineWidth) / 2),
+                       bounds.width / 2)
+        let inset = NSSize(width: side, height: Layout.verticalInset)
         if textContainerInset != inset { textContainerInset = inset }
     }
 }
@@ -66,18 +77,14 @@ struct Editor: NSViewRepresentable {
         tv.isHorizontallyResizable = false
         tv.isVerticallyResizable = true
         tv.autoresizingMask = [.width]
-        tv.minSize = NSSize(width: 0, height: 0)
+        tv.minSize = .zero
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                             height: CGFloat.greatestFiniteMagnitude)
-        tv.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        tv.frame = ColumnTextView.Layout.initialFrame
         tv.maxLineWidth = lineWidth
         tv.string = text
         tv.textStorage?.delegate = context.coordinator
-        tv.typingAttributes = [
-            .font: Typo.body(fontSize),
-            .foregroundColor: NSColor.textColor,
-            .paragraphStyle: Typo.paragraph(fontSize)
-        ]
+        tv.typingAttributes = Self.typingAttributes(fontSize)
 
         scroll.documentView = tv
         context.coordinator.textView = tv
@@ -101,14 +108,20 @@ struct Editor: NSViewRepresentable {
             context.coordinator.appliedSize = fontSize
             tv.maxLineWidth = lineWidth
             tv.refreshInsets()
-            tv.typingAttributes = [
-                .font: Typo.body(fontSize),
-                .foregroundColor: NSColor.textColor,
-                .paragraphStyle: Typo.paragraph(fontSize)
-            ]
+            tv.typingAttributes = Self.typingAttributes(fontSize)
             needsHighlight = true
         }
         if needsHighlight { context.coordinator.highlight(dirty: nil) }
+    }
+
+    /// Оформление ещё не набранного текста. Без него первый символ на пустой
+    /// строке появляется системным шрифтом и прыгает при перекраске.
+    static func typingAttributes(_ size: CGFloat) -> [NSAttributedString.Key: Any] {
+        [
+            .font: Typo.body(size),
+            .foregroundColor: NSColor.textColor,
+            .paragraphStyle: Typo.paragraph(size)
+        ]
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {

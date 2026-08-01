@@ -70,6 +70,39 @@ func runEditorTests() {
         Check.close(narrow - wide, (1100 - 420) / 2, "разница полей — половина разницы колонок")
     }
 
+    Check.suite("Оформление набираемого текста") {
+        // Один источник на два места: makeNSView и смену кегля. Раньше словарь
+        // был выписан дважды, и добавить атрибут в одном, забыв про второе,
+        // значило получить прыжок оформления при первом же Cmd+«+».
+        let attrs = Editor.typingAttributes(17)
+
+        Check.equal((attrs[.font] as? NSFont)?.fontName, Typo.body(17).fontName,
+                    "шрифт — основной")
+        Check.close((attrs[.font] as? NSFont)?.pointSize ?? 0, 17, "кегль как просили")
+        Check.equal(attrs[.foregroundColor] as? NSColor, NSColor.textColor, "цвет — основной")
+        Check.equal((attrs[.paragraphStyle] as? NSParagraphStyle)?.lineSpacing.bitPattern,
+                    Typo.paragraph(17).lineSpacing.bitPattern,
+                    "абзацный стиль тот же, что у подсветки")
+        Check.equal(attrs.count, 3, "ровно три атрибута — шрифт, цвет, абзац")
+
+        // Подсветка ставит те же три атрибута. Разойдись они — первый символ
+        // на пустой строке выглядел бы иначе, чем после перекраски.
+        let s = highlighted("Текст", size: 17)
+        Check.equal(s.font(at: 0)?.fontName, (attrs[.font] as? NSFont)?.fontName,
+                    "набираемый текст и покрашенный — один шрифт")
+        Check.equal(s.color(at: 0), attrs[.foregroundColor] as? NSColor,
+                    "набираемый текст и покрашенный — один цвет")
+    }
+
+    Check.suite("Колонка: именованные размеры") {
+        Check.close(ColumnTextView.Layout.verticalInset, 48, "вертикальный отступ 48")
+        Check.close(ColumnTextView.Layout.minSideInset, 30, "минимальное боковое поле 30")
+        Check.close(ColumnTextView.Layout.initialFrame.width, 800, "стартовая ширина 800")
+        Check.close(ColumnTextView.Layout.initialFrame.height, 600, "стартовая высота 600")
+        Check.ok(ColumnTextView.Layout.initialFrame.width > 0,
+                 "стартовый размер ненулевой — иначе контейнер сочтёт себя пустым")
+    }
+
     Check.suite("Колонка: значения по умолчанию") {
         // maxLineWidth инициализируется из настроек — окно должно открываться
         // с той же колонкой, с какой закрылось.
