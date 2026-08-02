@@ -38,6 +38,7 @@ enum Prefs {
         static let fontSize = "fontSize"
         static let lineWidth = "lineWidth"
         static let appearance = "appearance"
+        static let preview = "preview"
     }
 
     /// Кегль: ниже 11 текст нечитаем, выше 32 в колонку помещается пара слов.
@@ -62,6 +63,13 @@ enum Prefs {
     static var appearance: Appearance {
         get { Appearance(rawValue: UserDefaults.standard.string(forKey: Key.appearance) ?? "") ?? .system }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Key.appearance) }
+    }
+
+    /// Режим, в котором открываются следующие окна. Каждое окно дальше живёт
+    /// своим: одну заметку читают, соседнюю правят.
+    static var preview: Bool {
+        get { UserDefaults.standard.bool(forKey: Key.preview) }
+        set { UserDefaults.standard.set(newValue, forKey: Key.preview) }
     }
 
     static var fontSize: CGFloat {

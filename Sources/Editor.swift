@@ -42,18 +42,34 @@ struct Editor: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat
     var lineWidth: CGFloat
+    var isPreview: Bool
     var onStats: (Int, Int) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
-        scroll.autohidesScrollers = true
-        scroll.drawsBackground = true
-        scroll.backgroundColor = .textBackgroundColor
-        scroll.borderType = .noBorder
+    /// Оба режима — живые вью, спрятанные друг за другом. Пересоздавать их при
+    /// каждом переключении означало бы терять выделение, позицию прокрутки
+    /// и историю правок.
+    func makeNSView(context: Context) -> NSView {
+        let box = NSView(frame: ColumnTextView.Layout.initialFrame)
+        let source = makeSource(context)
+        let preview = makePreview(context)
+        for view in [source, preview] {
+            view.frame = box.bounds
+            view.autoresizingMask = [.width, .height]
+            box.addSubview(view)
+        }
+        preview.isHidden = !isPreview
+        source.isHidden = isPreview
+
+        context.coordinator.highlight(dirty: nil)
+        if isPreview { context.coordinator.refreshPreview() }
+        DispatchQueue.main.async { context.coordinator.focus() }
+        return box
+    }
+
+    private func makeSource(_ context: Context) -> NSScrollView {
+        let scroll = Self.makeScroll()
 
         let tv = ColumnTextView()
         tv.delegate = context.coordinator
@@ -88,13 +104,57 @@ struct Editor: NSViewRepresentable {
 
         scroll.documentView = tv
         context.coordinator.textView = tv
-        context.coordinator.highlight(dirty: nil)
-        DispatchQueue.main.async { tv.window?.makeFirstResponder(tv) }
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let tv = scroll.documentView as? ColumnTextView else { return }
+    /// Вью просмотра сознательно откатывается на TextKit 1: `NSTextTable`
+    /// в TextKit 2 не раскладывается, а каретки, ради которой редактор держится
+    /// за TextKit 2, здесь нет — текст только читают.
+    private func makePreview(_ context: Context) -> NSScrollView {
+        let scroll = Self.makeScroll()
+
+        let tv = ColumnTextView()
+        // Обращение к layoutManager откатывает вью на TextKit 1 — делаем его первым,
+        // до настройки контейнера, чтобы движок не менялся под уже готовой раскладкой.
+        _ = tv.layoutManager
+        tv.isEditable = false
+        tv.isSelectable = true
+        // isRichText здесь не выставляем: вью только для чтения, ограничивать ввод
+        // нечего, а флаг мешает хранилищу нести готовое оформление.
+        tv.usesFindBar = true
+        tv.isIncrementalSearchingEnabled = true
+        tv.drawsBackground = true
+        tv.backgroundColor = .textBackgroundColor
+        tv.linkTextAttributes = [.cursor: NSCursor.pointingHand]
+        tv.textContainer?.widthTracksTextView = true
+        tv.isHorizontallyResizable = false
+        tv.isVerticallyResizable = true
+        tv.autoresizingMask = [.width]
+        tv.minSize = .zero
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                            height: CGFloat.greatestFiniteMagnitude)
+        tv.frame = ColumnTextView.Layout.initialFrame
+        tv.maxLineWidth = lineWidth
+
+        scroll.documentView = tv
+        context.coordinator.previewView = tv
+        return scroll
+    }
+
+    private static func makeScroll() -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .textBackgroundColor
+        scroll.borderType = .noBorder
+        return scroll
+    }
+
+    func updateNSView(_ box: NSView, context: Context) {
+        guard let tv = context.coordinator.textView else { return }
+        let wasPreview = context.coordinator.appliedPreview
         context.coordinator.parent = self
 
         var needsHighlight = false
@@ -110,8 +170,21 @@ struct Editor: NSViewRepresentable {
             tv.refreshInsets()
             tv.typingAttributes = Self.typingAttributes(fontSize)
             needsHighlight = true
+
+            if let preview = context.coordinator.previewView {
+                preview.maxLineWidth = lineWidth
+                preview.refreshInsets()
+            }
         }
         if needsHighlight { context.coordinator.highlight(dirty: nil) }
+
+        if isPreview { context.coordinator.refreshPreview() }
+        context.coordinator.appliedPreview = isPreview
+        context.coordinator.sourceScroll?.isHidden = isPreview
+        context.coordinator.previewScroll?.isHidden = !isPreview
+        // Фокус переносим только на самом переключении: иначе любое обновление
+        // SwiftUI забирало бы его у find bar или у панели поиска.
+        if wasPreview != isPreview { context.coordinator.focus() }
     }
 
     /// Оформление ещё не набранного текста. Без него первый символ на пустой
@@ -127,13 +200,38 @@ struct Editor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: Editor
         weak var textView: ColumnTextView?
+        weak var previewView: ColumnTextView?
         var appliedSize: CGFloat
+        var appliedPreview = false
         private var dirty: NSRange?
         private var pendingStats: DispatchWorkItem?
+        /// Из чего собрано текущее превью. Пересборка стоит десяток миллисекунд,
+        /// и повторять её на каждое обновление SwiftUI незачем.
+        private var rendered: (text: String, size: CGFloat, width: CGFloat)?
 
         init(_ parent: Editor) {
             self.parent = parent
             self.appliedSize = parent.fontSize
+        }
+
+        var sourceScroll: NSScrollView? { textView?.enclosingScrollView }
+        var previewScroll: NSScrollView? { previewView?.enclosingScrollView }
+
+        /// Пересобирает превью, если изменился текст, кегль или ширина колонки.
+        func refreshPreview() {
+            guard let tv = previewView, let storage = tv.textStorage else { return }
+            let key = (parent.text, parent.fontSize, parent.lineWidth)
+            if let rendered, rendered == key { return }
+            storage.setAttributedString(
+                Renderer.attributed(parent.text, size: parent.fontSize, width: parent.lineWidth))
+            rendered = key
+        }
+
+        /// Клавиатура уходит видимому режиму — иначе ⌘F ищет в скрытой вью.
+        func focus() {
+            let target = parent.isPreview ? previewView : textView
+            guard let target, let window = target.window else { return }
+            window.makeFirstResponder(target)
         }
 
         /// Хранилище само сообщает, какой кусок изменился, — это точнее и дешевле,

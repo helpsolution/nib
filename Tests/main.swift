@@ -7,6 +7,7 @@ runMetricsAnchorTests()
 runPrefsTests()
 runDocumentTests()
 runHighlighterTests()
+runRendererTests()
 runEditorTests()
 
 exit(Check.report())

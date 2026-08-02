@@ -33,6 +33,10 @@ enum Typo {
         static let monoScale: CGFloat = 0.94
         /// Ширина табуляции в долях кегля.
         static let tabWidth: CGFloat = 2
+        /// Ступень отступа вложенного списка, в долях кегля.
+        static let listIndent: CGFloat = 1.6
+        /// Отступ цитаты, в долях кегля.
+        static let quoteIndent: CGFloat = 1.2
     }
 
     static func body(_ size: CGFloat) -> NSFont {
@@ -80,6 +84,37 @@ enum Typo {
         let p = NSMutableParagraphStyle()
         p.setParagraphStyle(paragraph(size))
         p.paragraphSpacingBefore = size * Metrics.headingSpacingBefore
+        return p
+    }
+
+    // MARK: - Стили режима просмотра
+    //
+    // Ниже — только для Preview: в исходнике этих блоков нет, там разметка видна
+    // как текст. Формулы выше не трогаются, их держит MetricsAnchorTests.
+
+    /// Пункт списка с висячим отступом: маркер стоит в поле, текст выравнивается
+    /// по табуляции и переносится под себя, а не под маркер.
+    ///
+    /// `closing` — последний пункт списка. Внутри списка отбивки нет, иначе пункты
+    /// разъезжаются как отдельные абзацы; воздух возвращается на выходе из списка.
+    static func listParagraph(_ size: CGFloat, depth: Int, closing: Bool) -> NSParagraphStyle {
+        let step = size * Metrics.listIndent
+        let p = NSMutableParagraphStyle()
+        p.setParagraphStyle(paragraph(size))
+        p.firstLineHeadIndent = step * CGFloat(depth - 1)
+        p.headIndent = step * CGFloat(depth)
+        p.tabStops = [NSTextTab(textAlignment: .left, location: step * CGFloat(depth))]
+        p.paragraphSpacing = closing ? size * Metrics.paragraphSpacing : 0
+        return p
+    }
+
+    /// Строка блока кода. Каждая строка блока — отдельный абзац, поэтому обычная
+    /// отбивка разнесла бы код на несвязанные строки; воздух возвращается только
+    /// на последней строке блока (`closing`).
+    static func codeParagraph(_ size: CGFloat, closing: Bool) -> NSParagraphStyle {
+        let p = NSMutableParagraphStyle()
+        p.setParagraphStyle(paragraph(size))
+        p.paragraphSpacing = closing ? size * Metrics.paragraphSpacing : 0
         return p
     }
 }

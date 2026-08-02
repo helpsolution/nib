@@ -10,15 +10,14 @@ command -v swiftc >/dev/null || { echo "swiftc не найден. Выполни
 SDK="$(xcrun --show-sdk-path --sdk macosx)"
 
 # Всё, кроме NibApp: там @main, он конфликтует с точкой входа тестов.
-# EditorScreen тянется следом за Editor — тот ссылается на ZoomActions.
-UNITS=(Prefs Typo Highlighter MarkdownDocument Editor EditorScreen)
-
+# Список берём глобом, как в build.sh: раньше он был выписан руками и отставал
+# от Sources/ при каждом новом файле.
 SOURCES=()
-for unit in "${UNITS[@]}"; do
-  file="$ROOT/Sources/$unit.swift"
-  [ -f "$file" ] || { echo "Нет исходника: $file"; exit 1; }
+for file in "$ROOT"/Sources/*.swift; do
+  [ "$(basename "$file")" = "NibApp.swift" ] && continue
   SOURCES+=("$file")
 done
+[ ${#SOURCES[@]} -gt 0 ] || { echo "Нет исходников в $ROOT/Sources"; exit 1; }
 
 TESTS=("$ROOT"/Tests/*.swift)
 [ -e "${TESTS[0]}" ] || { echo "Нет тестов в $ROOT/Tests"; exit 1; }
