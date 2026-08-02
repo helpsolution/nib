@@ -6,7 +6,7 @@ set -euo pipefail
 
 APP_NAME="Nib"
 BUNDLE_ID="local.nib.editor"
-VERSION="1.1.1"
+VERSION="1.2.0"
 MIN_MACOS="13.0"
 ARCHS="arm64 x86_64"   # universal binary: Apple Silicon + Intel
 
